@@ -11,7 +11,6 @@ const { TextDecoder, TextEncoder } = require("util");
 
 require("dotenv").config();
 
-const MAIN_ACCOUNT = "";
 
 const WAX_ENDPOINTS = _.shuffle([
 	// "https://api.wax.greeneosio.com",
@@ -537,7 +536,7 @@ async function feedAnimals(account, privKey) {
 async function transferCorn(account, privKey) {
 	shuffleEndpoints();
 
-	const { DELAY_MIN, DELAY_MAX } = process.env;
+	const { DELAY_MIN, DELAY_MAX, MAIN_ACCOUNT } = process.env;
 	const delayMin = parseFloat(DELAY_MIN) || 4;
 	const delayMax = parseFloat(DELAY_MAX) || 10;
 	const asset_ids= [];
@@ -557,6 +556,7 @@ async function transferCorn(account, privKey) {
 		);
 		if(MAIN_ACCOUNT != ""){
 			const actions = [makeTransferCornAction(account, MAIN_ACCOUNT, asset_ids)];
+			
 			await waitFor(delay);
 			await transact({ account, privKeys: [privKey], actions });
 		}else{
