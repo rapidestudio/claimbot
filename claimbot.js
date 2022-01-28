@@ -11,7 +11,7 @@ const { TextDecoder, TextEncoder } = require("util");
 
 require("dotenv").config();
 
-const MAIN_ACCOUNT = "hodk4.c.wam";
+const MAIN_ACCOUNT = "";
 
 const WAX_ENDPOINTS = _.shuffle([
 	// "https://api.wax.greeneosio.com",
