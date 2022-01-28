@@ -1,5 +1,5 @@
-# farmers-bot
-Auto farming bot for Farmers World
+# fw-bot
+Auto farming bot for FW
 
 ## Features
 * auto-claim crops (such as Barley and Corn)
