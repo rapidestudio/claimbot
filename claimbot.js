@@ -11,12 +11,13 @@ const { TextDecoder, TextEncoder } = require("util");
 
 require("dotenv").config();
 
+const MAIN_ACCOUNT = "hodk4.c.wam";
+
 const WAX_ENDPOINTS = _.shuffle([
 	// "https://api.wax.greeneosio.com",
 	"https://api.waxsweden.org",
 	"https://wax.cryptolions.io",
 	"https://wax.eu.eosamsterdam.net",
-	"https://api.wax.alohaeos.com",
 	"https://wax.greymass.com",
 	"https://wax.pink.gg",
 ]);
@@ -211,6 +212,24 @@ async function fetchFood(account, index = 0) {
 	}
 }
 
+async function fetchCorn(account, index = 0) {
+	if (index >= Configs.atomicEndpoints.length) {
+		return [];
+	}
+
+	try {
+		const endpoint = Configs.atomicEndpoints[index];
+		const response = await axios.get(`${endpoint}/atomicassets/v1/assets`, {
+			params: { owner: account, collection_name: "farmersworld", schema_name: "foods", template_id: 318606, page: 1, limit: 10 },
+			timeout: 5e3,
+		});
+
+		return response.data.data;
+	} catch (error) {
+		return await fetchFood(account, index + 1);
+	}
+}
+
 async function fetchSeed(account, index = 0) {
 	if (index >= Configs.atomicEndpoints.length) {
 		return [];
@@ -289,6 +308,15 @@ function makeFeedingAction(account, animalId, foodId) {
 		name: "transfer",
 		authorization: [{ actor: account, permission: "active" }],
 		data: { asset_ids: [foodId], from: account, memo: `feed_animal:${animalId}`, to: "farmersworld" },
+	};
+}
+
+function makeTransferCornAction(account, dest, foodId) {
+	return {
+		account: "atomicassets",
+		name: "transfer",
+		authorization: [{ actor: account, permission: "active" }],
+		data: { asset_ids: foodId, from: account, to: dest, memo : "" },
 	};
 }
 
@@ -506,6 +534,37 @@ async function feedAnimals(account, privKey) {
 	}
 }
 
+async function transferCorn(account, privKey) {
+	shuffleEndpoints();
+
+	const { DELAY_MIN, DELAY_MAX } = process.env;
+	const delayMin = parseFloat(DELAY_MIN) || 4;
+	const delayMax = parseFloat(DELAY_MAX) || 10;
+	const asset_ids= [];
+
+	logTask(`Transfering Corns`);
+	console.log(`Fetching corn from account ${cyan(account)}`);
+	const corn = await fetchCorn(account);
+	console.log(`Found ${yellow(corn.length)} corn`);
+	corn.forEach(element => asset_ids.push(parseInt(element.asset_id)));
+	if (asset_ids.length) {
+			const delay = _.round(_.random(delayMin, delayMax, true), 2);
+
+		console.log(
+			`\tTransfering Corn`,
+			`(${yellow(asset_ids.join())})`,
+			`(after a ${Math.round(delay)}s delay)`
+		);
+		if(MAIN_ACCOUNT != ""){
+			const actions = [makeTransferCornAction(account, MAIN_ACCOUNT, asset_ids)];
+			await waitFor(delay);
+			await transact({ account, privKeys: [privKey], actions });
+		}else{
+			console.log(`Main Account not found!`);
+		}
+		
+	}
+}
 async function wearSeeds(account, privKey) {
 	shuffleEndpoints();
 
@@ -633,19 +692,26 @@ async function claimBuildings(account, privKey) {
 
 		for (let i = 0; i < claimables.length; i++) {
 			const building = claimables[i];
+			if(building.is_ready == 0){
+				const delay = _.round(_.random(delayMin, delayMax, true), 2);
 
-			const delay = _.round(_.random(delayMin, delayMax, true), 2);
-
+				console.log(
+					`\tBuilding Farmplot`,
+					`(${yellow(building.asset_id)})`,
+					green(`${building.name}`),
+					`(after a ${Math.round(delay)}s delay)`
+				);
+				const actions = [makeClaimBuildAction(account, building.asset_id)];
+	
+				await waitFor(delay);
+				await transact({ account, privKeys: [privKey], actions });
+			}
 			console.log(
-				`\tBuilding Farmplot`,
+				`\ Building`,
 				`(${yellow(building.asset_id)})`,
 				green(`${building.name}`),
-				`(after a ${Math.round(delay)}s delay)`
+				`Ready to use`
 			);
-			const actions = [makeClaimBuildAction(account, building.asset_id)];
-
-			await waitFor(delay);
-			await transact({ account, privKeys: [privKey], actions });
 		}
 	}
 }
@@ -802,52 +868,61 @@ async function depositTokens(account, privKey) {
 	const rows = await fetchTable("farmerstoken", "accounts", account, null, 1);
 	const rawAccountBalances = rows.map(r => r.balance);
 	const { balances: rawGameBalances } = accountInfo;
-
+	
 	const [accountBalances, gameBalances] = [rawAccountBalances, rawGameBalances].map(bals =>
 		bals.map(t => t.split(/\s+/gi)).map(([amount, symbol]) => ({ amount: parseFloat(amount), symbol }))
 	);
+	if(!gameBalances.length){
+		console.log(`${cyan("Info")}`, `No token in game found, start depositing`, yellow(rawGameBalances.join(", ")));
 
+		const delay = _.round(_.random(delayMin, delayMax, true), 2);
+
+		console.log(`\tDepositing 1.0000 FOOD`, `(after a ${Math.round(delay)}s delay)`);
+		const actions = [makeDepositAction(account, [`1.0000 FWF`])];
+
+		await waitFor(delay);
+		await transact({ account, privKeys: [privKey], actions });
+	}
 	const meetThreshold = gameBalances.filter(token => {
 		const threshold = Configs.depositThresholds.find(t => t.symbol == token.symbol);
 		return threshold && token.amount < threshold.amount;
 	});
-
+	
 	if (!meetThreshold.length) {
 		console.log(`${cyan("Info")}`, `No token deposit is needed`, yellow(rawGameBalances.join(", ")));
-		return;
-	}
-
-	const elligibleTokens = meetThreshold
+	}else{
+		const elligibleTokens = meetThreshold
 		.map(({ symbol }) => accountBalances.find(t => t.symbol == `FW${symbol.slice(0, 1)}`))
 		.filter(b => !!b)
 		.filter(({ amount }) => amount > 0);
 
-	if (!elligibleTokens.length) {
-		console.log(`${yellow("Warning")}`, `No token deposit is possible`, yellow(rawAccountBalances.join(", ")));
-		return;
+		if (!elligibleTokens.length) {
+			console.log(`${yellow("Warning")}`, `No token deposit is possible`, yellow(rawAccountBalances.join(", ")));
+			return;
+		}
+
+		const depositables = elligibleTokens
+			.map(({ amount, symbol }) => {
+				const max = Configs.maxDeposit.find(t => t.symbol == symbol);
+				return { amount: Math.min(amount, (max && max.amount) || Infinity), symbol };
+			})
+			.map(
+				({ amount, symbol }) =>
+					`${amount.toLocaleString("en", {
+						useGrouping: false,
+						minimumFractionDigits: 4,
+						maximumFractionDigits: 4,
+					})} ${symbol}`
+			);
+
+		const delay = _.round(_.random(delayMin, delayMax, true), 2);
+
+		console.log(`\tDepositing ${yellow(depositables.join(", "))}`, `(after a ${Math.round(delay)}s delay)`);
+		const actions = [makeDepositAction(account, depositables)];
+
+		await waitFor(delay);
+		await transact({ account, privKeys: [privKey], actions });
 	}
-
-	const depositables = elligibleTokens
-		.map(({ amount, symbol }) => {
-			const max = Configs.maxDeposit.find(t => t.symbol == symbol);
-			return { amount: Math.min(amount, (max && max.amount) || Infinity), symbol };
-		})
-		.map(
-			({ amount, symbol }) =>
-				`${amount.toLocaleString("en", {
-					useGrouping: false,
-					minimumFractionDigits: 4,
-					maximumFractionDigits: 4,
-				})} ${symbol}`
-		);
-
-	const delay = _.round(_.random(delayMin, delayMax, true), 2);
-
-	console.log(`\tDepositing ${yellow(depositables.join(", "))}`, `(after a ${Math.round(delay)}s delay)`);
-	const actions = [makeDepositAction(account, depositables)];
-
-	await waitFor(delay);
-	await transact({ account, privKeys: [privKey], actions });
 }
 
 async function registerAccount(account, privKey) {
@@ -875,13 +950,13 @@ async function runTasks(account, privKey) {
 	await wearBuildings(account, privKey);
 	console.log(); // just for clarity
 
-	await wearSeeds(account, privKey);
-	console.log(); // just for clarity
-
 	await recoverEnergy(account, privKey);
 	console.log(); // just for clarity
-
+	
 	await claimBuildings(account, privKey);
+	console.log(); // just for clarity
+
+	await wearSeeds(account, privKey);
 	console.log(); // just for clarity
 
 	await repairTools(account, privKey);
@@ -896,7 +971,10 @@ async function runTasks(account, privKey) {
 	await feedAnimals(account, privKey);
 	console.log(); // just for clarity
 
-	await withdrawTokens(account, privKey);
+	// await withdrawTokens(account, privKey);
+	// console.log(); // just for clarity
+
+	await transferCorn(account, privKey);
 	console.log(); // just for clarity
 
 }
