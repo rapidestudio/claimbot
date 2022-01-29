@@ -574,27 +574,33 @@ async function wearSeeds(account, privKey) {
 
 	console.log(`Fetching seed from account ${cyan(account)}`);
 	const seeds = await fetchSeed(account);
-	console.log(`Found ${yellow(seeds.length)} seeds`);
+	const buildings = await fetchBuildingsInGame(account);
+	if(buildings[0].is_ready == 0){
+		console.log("Building Not Ready for Use");
+	}else{
+		console.log(`Found ${yellow(seeds.length)} seeds`);
 
-	if (seeds.length) {
+		if (seeds.length) {
 
-		console.log("Wear Seeds");
+			console.log("Wear Seeds");
 
-		for (let i = 0; i < seeds.length; i++) {
-			const seed = seeds[i];
-			const delay = _.round(_.random(delayMin, delayMax, true), 2);
+			for (let i = 0; i < seeds.length; i++) {
+				const seed = seeds[i];
+				const delay = _.round(_.random(delayMin, delayMax, true), 2);
 
-			console.log(
-				`\tWear Seed `,
-				`(${yellow(seed.asset_id)})`,
-				`(after a ${Math.round(delay)}s delay)`
-			);
-			const actions = [makeWearSeedAction(account, seed.asset_id)];
+				console.log(
+					`\tWear Seed `,
+					`(${yellow(seed.asset_id)})`,
+					`(after a ${Math.round(delay)}s delay)`
+				);
+				const actions = [makeWearSeedAction(account, seed.asset_id)];
 
-			await waitFor(delay);
-			await transact({ account, privKeys: [privKey], actions });
+				await waitFor(delay);
+				await transact({ account, privKeys: [privKey], actions });
+			}
 		}
 	}
+	
 }
 
 async function wearBuildings(account, privKey) {
